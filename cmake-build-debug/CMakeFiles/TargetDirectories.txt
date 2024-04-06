@@ -1,0 +1,4 @@
+/Users/theolincke/CLionProjects/c_big_int/cmake-build-debug/CMakeFiles/bigint.dir
+/Users/theolincke/CLionProjects/c_big_int/cmake-build-debug/CMakeFiles/main.dir
+/Users/theolincke/CLionProjects/c_big_int/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/theolincke/CLionProjects/c_big_int/cmake-build-debug/CMakeFiles/rebuild_cache.dir
