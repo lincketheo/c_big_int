@@ -1,2 +1,0 @@
-/usr/bin/ar qc libbigint.a CMakeFiles/bigint.dir/big_int.c.o
-/usr/bin/ranlib libbigint.a

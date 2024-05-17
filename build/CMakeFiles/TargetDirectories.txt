@@ -1,5 +1,0 @@
-/home/tjl/Development/c_big_int/build/CMakeFiles/bigint.dir
-/home/tjl/Development/c_big_int/build/CMakeFiles/main.dir
-/home/tjl/Development/c_big_int/build/CMakeFiles/test.dir
-/home/tjl/Development/c_big_int/build/CMakeFiles/edit_cache.dir
-/home/tjl/Development/c_big_int/build/CMakeFiles/rebuild_cache.dir
