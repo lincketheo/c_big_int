@@ -5,58 +5,51 @@
 #ifndef C_BIG_INT_BIG_INT_H
 #define C_BIG_INT_BIG_INT_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
-struct big_int {
-    uint8_t *data;
-    size_t size;
-    size_t capacity;
+/**
+ * A Big Int is a stream of bits (uint8_t* array)
+ * Each [bpd] bits is a "digit"
+ */
+struct big_uint {
+  uint8_t* data;
+
+  uint base;
+  uint bpd; // bits per digit - derived from base
+
+  size_t size;      // Size wrt exponent
+  size_t capacity;  // Actual capacity of data
+  size_t data_size; // Actual size of data
 };
 
 /**
  * Utils
  */
-void bi_init(struct big_int *bi, size_t initial_capacity);
+int bi_init(struct big_uint* bi, uint64_t start, uint64_t base);
 
-void bi_clean(struct big_int bi);
-
-void bi_print(struct big_int bi);
-
-void bi_print_hex(struct big_int bi);
+void bi_free(struct big_uint* bi);
 
 /**
- * Big Int X Bit Int
+ * Returns a string (null terminated and malloced!)
+ * that shows the power representation. For example,
+ * base = 7:
+ * "5x7^4 + 3x7^3 + 2x7^2 + 1x7^1 + 0x7^0"
  */
-void bi_add(struct big_int *dest, struct big_int left, struct big_int right);
-
-void bi_mult(struct big_int *dest, struct big_int left, struct big_int right);
-
-void bi_subtract(struct big_int *dest, struct big_int left, struct big_int right);
-
-void bi_div(struct big_int *dest, struct big_int left, struct big_int right);
-
-void bi_mod(struct big_int *dest, struct big_int left, struct big_int right);
+char* bi_power_format(struct big_uint* bi);
 
 /**
- * Big Int X Int
+ * Big Int += Bit Int
  */
-void bi_add_sc(struct big_int *dest, struct big_int left, int right);
-
-void bi_mult_sc(struct big_int *dest, struct big_int left, int right);
-
-void bi_subtract_sc_l(struct big_int *dest, struct big_int left, int right);
-
-void bi_div_sc_l(struct big_int *dest, struct big_int left, int right);
-
-void bi_mod_sc_l(struct big_int *dest, struct big_int left, int right);
+int bi_add_bi(
+    struct big_uint* dest,
+    const struct big_uint* right);
 
 /**
- * Int X Big Int
+ * Big Int += Scalar
  */
-void bi_subtract_sc_r(struct big_int *dest, struct big_int left, int right);
+int bi_add_sc(
+    struct big_uint* dest,
+    const uint64_t right);
 
-void bi_div_sc_r(struct big_int *dest, int left, struct big_int right);
-
-void bi_mod_sc_r(struct big_int *dest, int left, struct big_int right);
-
-#endif //C_BIG_INT_BIG_INT_H
+#endif // C_BIG_INT_BIG_INT_H
