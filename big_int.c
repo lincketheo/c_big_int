@@ -84,6 +84,31 @@ void bi_free(struct big_uint* bi)
   bi->data = NULL;
 }
 
+void bi_print8(const struct big_uint* bi) {
+  size_t pow = bi->size;
+  for(int i = 0; i < bi->size - 1; ++i){
+    size_t pow = bi->size - i - 1;
+    printf("%dx%" PRIu64 "^(%zu) + ", bi->data[i], bi->base, pow);
+  }
+  printf("%d\n", bi->data[bi->size - 1]);
+}
+
+void bi_print(const struct big_uint* bi) {
+  switch(bi->span){
+    case UI8:
+      bi_print8(bi);
+      return;
+    case UI16:
+      assert(0);
+    case UI32:
+      assert(0);
+    case UI64:
+      assert(0);
+    default:
+      assert(0);
+  }
+}
+
 char* bi_power_format(const struct big_uint* bi)
 {
   size_t len = calc_strlen_bi_power_format(bi);
@@ -188,6 +213,8 @@ int bi_add_sc(
     struct big_uint* dest,
     const uint64_t right)
 {
+  // TODO
+  dest->data[dest->size - 1] += right;
   return -1;
 }
 

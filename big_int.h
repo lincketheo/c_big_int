@@ -46,7 +46,7 @@ void bi_free(struct big_uint* bi);
  * base = 7:
  * "5x7^4 + 3x7^3 + 2x7^2 + 1x7^1 + 0x7^0"
  */
-char* bi_power_format(const struct big_uint* bi);
+void bi_print(const struct big_uint* bi);
 
 /**
  * Big Int += Bit Int
