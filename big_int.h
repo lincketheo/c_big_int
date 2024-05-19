@@ -8,20 +8,26 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define uint uint32_t
-
 /**
- * A Big Int is a stream of bits (uint8_t* array)
- * Each [bpd] bits is a "digit"
+ * Base is MAX_UINT64_t / 2 because of carry in add
  */
+#define MAX_BASE (0x7FFFFFFFFFFFFFFF)
+
+enum span {
+  UI8 = 1,
+  UI16 = 2,
+  UI32 = 4,
+  UI64 = 8
+};
+
 struct big_uint {
-  uint8_t* data;
+  uint8_t* data; 
 
-  uint base; 
-  uint bpd; // bits per digit - derived from base
+  size_t size;          // Number of elements (does respect [span])
+  size_t capacity;      // Number of bytes in data (doesn't respect [span])
 
-  size_t size;      // Size wrt exponent
-  size_t capacity;  // Actual capacity of data
+  const uint64_t base;  
+  const size_t span;    
 };
 
 /**

@@ -7,32 +7,18 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <inttypes.h>
 
-static uint quick_pow10(uint8_t n);
+static uint64_t quick_pow10(uint8_t n);
 static void bi_error(const char* msg_fmt, ...);
 static void bi_test_passed(const char* msg_fmt, ...);
 static void bi_test_failed(const char* msg_fmt, ...);
 static size_t calc_strlen_bi_power_format(const struct big_uint* bi);
-static uint min_bits_needed(const uint num);
-static uint min_decs_needed(const uint num);
+static enum span span_from_base(const uint64_t base);
+static uint64_t min_decs_needed(const uint64_t num);
 static int double_capacity(struct big_uint* bi);
-static char* bits8_str( uint8_t x );
-static char* bits64_str( uint64_t x );
-static uint64_t get_bits_span(
-  const uint8_t* data, 
-  const size_t dl, 
-  const size_t elem_bit_size,
-  const size_t i
-);
-static void set_bits_span(
-  uint8_t* data, 
-  const size_t dl, 
-  const size_t elem_bit_size,
-  const size_t i,
-  uint64_t val
-);
 
 /**
  * Utils
@@ -42,37 +28,52 @@ int bi_init(
   uint64_t start, 
   uint64_t base)
 {
-  if (!bi) {
-    bi_error("bi_init failed because bi was uninitialized\n");
-    return -1;
-  }
-  if (base == 0) {
-    bi_error("bi_init failed because base was 0\n");
+  if (base < 2 || base > MAX_BASE) {
+    bi_error("Invalid base: %" PRIu64 ". Required: 2 <= base <= %" PRIu64 "\n", base, MAX_BASE);
     return -1;
   }
 
-  size_t start_cap = 1;
-  bi->data = calloc(start_cap, 1);
-  bi->capacity = start_cap;
-  bi->size = 1;
-  bi->bpd = min_bits_needed(base - 1); // for base 7, the maximum value is 6
-  bi->base = base;
+  size_t start_cap = 8;
+  struct big_uint ret = {
+    .data = calloc(start_cap, 1),
+    .size = 1,
+    .capacity = start_cap,
+    .base = base,
+    .span = span_from_base(base)
+  };
+
+  memcpy(bi, &ret, sizeof(struct big_uint));
 
   bi_add_sc(bi, start);
 
   return 0;
 }
 
+static int test_bi_init_status_code_once(uint64_t start, uint64_t base, int status_exp) {
+  struct big_uint bi;
+  memset(&bi, 0, sizeof(struct big_uint));
+  int status_actual = bi_init(&bi, start, base);
+  bi_free(&bi);
+  int ret = -(status_exp != status_actual);
+  
+  if(ret)
+    bi_test_failed("bi_init(start = %" PRIu64 ", base = %" PRIu64 ") - "
+                   "Expected return status: %d, got: %d\n", start, base, status_exp, status_actual);
+  else
+    bi_test_passed("bi_init(start = %" PRIu64 ", base = %" PRIu64 ")\n", start, base);
+
+  return ret;
+}
+
 int test_bi_init()
 {
-  struct big_uint bi;
   int ret = 0;
-  if (!bi_init(&bi, 0, 0)) {
-    bi_test_failed("bi_init(0)\n");
-    ret = -1;
-  } else {
-    bi_test_passed("bi_init(0)\n");
-  }
+  ret = test_bi_init_status_code_once(0, 0, -1) || ret;
+  ret = test_bi_init_status_code_once(0, 1, -1) || ret;
+  ret = test_bi_init_status_code_once(0, 1lu << 63, -1) || ret;
+  ret = test_bi_init_status_code_once(0, (1lu << 63) - 1, 0) || ret;
+  ret = test_bi_init_status_code_once(0, (uint64_t)-1, -1) || ret;
+
   return ret;
 }
 
@@ -83,28 +84,46 @@ void bi_free(struct big_uint* bi)
   bi->data = NULL;
 }
 
-char* bi_bits(const struct big_uint* bi) {
-  size_t bits_l = bi->size * bi->bpd;
-  char* ret = malloc(bits_l);
-  if(!ret)
-    return NULL;
-  size_t bit_i = 0;
-  for(int i = 0; i < bi->size; ++i) {
-    uint64_t elem_i = get_bits_span(bi->data, bi->capacity, bi->bpd, i);
-    for(int j = 0; j < bi->bpd; ++j) {
-      ret[bit_i] = (elem_i >> j) & 1 ? '1' : '0';
-      bit_i++;
-    }
-  }
-  return ret;
-}
-
 char* bi_power_format(const struct big_uint* bi)
 {
   size_t len = calc_strlen_bi_power_format(bi);
   char* ret = malloc(len + 1);
   ret[len] = '\0';
   return ret;
+}
+
+ssize_t bi_add_bi_8(
+  uint8_t* dest,
+  size_t dest_size,
+  const uint8_t* right,
+  size_t right_size,
+  uint64_t base
+) {
+  // Max size possible for dest - including carry adding one more digit to the left
+  size_t max_size = dest_size > right_size ? dest_size : right_size + 1;
+  int carry = 0;
+
+  // Seems like we're buffer overflowing, but assume capacity is good enough
+  // before entering this function
+  memset(dest + dest_size, 0, max_size - dest_size);
+  for(int i = 0; i < right_size; ++i) {
+    dest[i] += carry + right[i];
+    carry = dest[i] >= base;
+    if(carry)
+      dest[i] -= base;
+  }
+
+  uint8_t bm1 = base - 1;
+  for(int i = 0; i < max_size; ++i) {
+    if(carry && dest[i] == bm1){
+      dest[i] = 0;
+      carry = 1;
+    } else {
+      return i != max_size - 1 ? max_size - 1 : max_size;
+    }
+  }
+
+  assert(0);
 }
 
 int bi_add_bi(
@@ -116,32 +135,19 @@ int bi_add_bi(
     return -1;
   }
 
-  uint64_t carry = 0; // 0 or 1
-  size_t max_size = dest->size > right->size ? dest->size : right->size;
-
-  // Max Size is biggest size plus one (if there's a carry at the end)
-  size_t necessary_capacity = ((max_size + 1) * dest->bpd) / 8 + 1;
-  if(dest->capacity < necessary_capacity)
-    double_capacity(dest);
-
-  for (int i = 0; i < max_size; ++i) {
-
-    uint64_t sum = carry; 
-
-    if(i < dest->size)
-      sum += get_bits_span(dest->data, dest->capacity, dest->bpd, i);
-    if(i < right->size)
-      sum += get_bits_span(right->data, right->capacity, right->bpd, i);
-    if(sum >= right->base){
-      carry = 1;
-      sum -= right->base;
-    }
-
-    set_bits_span(dest->data, dest->capacity, dest->bpd, i, sum);
+  switch(dest->span){
+    case UI8:
+      dest->size = bi_add_bi_8(dest->data, dest->size, right->data, right->size, dest->base);
+      return 0;
+    case UI16:
+      assert(0);
+    case UI32:
+      assert(0);
+    case UI64:
+      assert(0);
+    default:
+      assert(0);
   }
-
-  dest->size = max_size;
-  return 0;
 }
 
 int test_bi_add_bi()
@@ -186,10 +192,10 @@ int bi_add_sc(
 }
 
 /////////////////////////////////////// UTILS
-static uint quick_pow10(uint8_t n)
+static uint64_t quick_pow10(uint8_t n)
 {
   // TODO - make this better
-  return (uint)powf(10, n);
+  return (uint64_t)powf(10, n);
 }
 
 static void bi_error(const char* msg_fmt, ...)
@@ -218,11 +224,11 @@ static void bi_test_failed(const char* msg_fmt, ...)
 
 static size_t calc_strlen_bi_power_format(const struct big_uint* bi)
 {
-  uint prefix = min_decs_needed(bi->base - 1);
-  uint exp_base = min_decs_needed(bi->base);
-  uint exp = min_decs_needed(bi->size - 1);
-  uint extra = 4; // "..x.. + " - minus the last one
-  uint unit_len = prefix + exp_base + exp + extra;
+  uint64_t prefix = min_decs_needed(bi->base - 1);
+  uint64_t exp_base = min_decs_needed(bi->base);
+  uint64_t exp = min_decs_needed(bi->size - 1);
+  uint64_t extra = 4; // "..x.. + " - minus the last one
+  uint64_t unit_len = prefix + exp_base + exp + extra;
   return unit_len * bi->size - extra;
 }
 
@@ -231,51 +237,59 @@ static int test_calc_strlen_bi_power_format(struct big_uint* bi)
   return -1;
 }
 
-static uint min_bits_needed(const uint num)
+static enum span span_from_base(const uint64_t base)
 {
-  uint count = 0;
-  while (num >> ++count)
-    ;
-  return count;
+  // 2 * base so that every element can hold at most 2 x base because in
+  // add, maximum value is 2 x base (e.g. (base - 1) + (base - 1))
+  if(2 * base >= (1lu << 32)) 
+    return UI64;
+  else if(2 * base >= (1lu << 16)) 
+    return UI32;
+  else if(2 * base >= (1lu << 8)) 
+    return UI16;
+  else 
+    return UI8;
 }
 
-static int test_min_bits_needed_once(uint digit, uint expected)
+static int test_span_from_base_once(uint64_t digit, enum span expected)
 {
-  uint actual = min_bits_needed(digit);
+  enum span actual = span_from_base(digit);
   if (actual != expected) {
-    bi_test_failed("min_bits_needed(%d) "
+    bi_test_failed("span_from_base(%d) "
                    "Expected: %d Actual: %d\n",
         digit, expected, actual);
     return -1;
   }
-  bi_test_passed("min_bits_needed(%d)\n", digit);
+  bi_test_passed("span_from_base(%d)\n", digit);
   return 0;
 }
 
-static int test_min_bits_needed()
+static int test_span_from_base()
 {
   int ret = 0;
-  ret = test_min_bits_needed_once(0, 1) || ret;
-  ret = test_min_bits_needed_once(1, 1) || ret;
-  ret = test_min_bits_needed_once(2, 2) || ret;
-  ret = test_min_bits_needed_once(3, 2) || ret;
-  ret = test_min_bits_needed_once(4, 3) || ret;
-  ret = test_min_bits_needed_once(8, 4) || ret;
-  ret = test_min_bits_needed_once(9999999, 24) || ret;
+  ret = test_span_from_base_once(0, UI8) || ret;
+  ret = test_span_from_base_once(1, UI8) || ret;
+  ret = test_span_from_base_once(2, UI8) || ret;
+  ret = test_span_from_base_once(3, UI8) || ret;
+  ret = test_span_from_base_once(4, UI8) || ret;
+  ret = test_span_from_base_once(8, UI8) || ret;
+  ret = test_span_from_base_once(255, UI16) || ret;
+  ret = test_span_from_base_once(9999999, UI32) || ret;
+  ret = test_span_from_base_once(1lu << 40, UI64) || ret;
   return -ret;
 }
 
-static uint min_decs_needed(const uint num)
+static uint64_t min_decs_needed(const uint64_t num)
 {
-  uint count = 0;
+  uint64_t count = 0;
   while (num / quick_pow10(++count))
     ;
   return count;
 }
 
-static int test_min_decs_needed_once(uint digit, uint expected)
+static int test_min_decs_needed_once(uint64_t digit, uint64_t expected)
 {
-  uint actual = min_decs_needed(digit);
+  uint64_t actual = min_decs_needed(digit);
   if (actual != expected) {
     bi_test_failed("min_decs_needed(%d) "
                    "Expected: %d Actual: %d\n",
@@ -656,7 +670,7 @@ static int test_set_bits(int verbose) {
 int test_various_others()
 {
   int ret = 0;
-  ret = test_min_bits_needed() || ret;
+  ret = test_span_from_base() || ret;
   ret = test_min_decs_needed() || ret;
   ret = test_bits8_str() || ret;
   ret = test_bits64_str() || ret;
