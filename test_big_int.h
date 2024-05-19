@@ -9,6 +9,6 @@ int test_various_others();
 
 int test_bi_init();
 
-int test_bi_clean();
+int test_bi_add_bi();
 
 #endif // C_TEST_BIG_INT_BIG_INT_H
