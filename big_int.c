@@ -11,18 +11,48 @@
 #include <strings.h>
 #include <inttypes.h>
 
+/**
+ * Calculates powers of 10 quickly
+ */
 static uint64_t quick_pow10(uint8_t n);
-static void bi_error(const char* msg_fmt, ...);
-static void bi_test_passed(const char* msg_fmt, ...);
-static void bi_test_failed(const char* msg_fmt, ...);
-static size_t calc_strlen_bi_power_format(const struct big_uint* bi);
-static enum span span_from_base(const uint64_t base);
-static uint64_t min_decs_needed(const uint64_t num);
-static int double_capacity(struct big_uint* bi);
 
 /**
- * Utils
+ * Displays an error message with respect to the big int library.
+ * Use just like printf
  */
+static void bi_error(const char* msg_fmt, ...);
+
+/**
+ * Displays a Test Passed message with respect to the big int library.
+ * Use just like printf
+ */
+static void bi_test_passed(const char* msg_fmt, ...);
+
+/**
+ * Displays a Test Failed message with respect to the big int library.
+ * Use just like printf
+ */
+static void bi_test_failed(const char* msg_fmt, ...);
+
+/**
+ * Calculates span type from base.
+ * @note The required span for a certain base is the maximum span for 2 * base
+ * because in add(bi, bi), the maximum value at each index is (base - 1) + (base - 1).
+ */
+static enum span span_from_base(const uint64_t base);
+
+/**
+ * Calculates minimum decimals needed to express a uint64_t in string format 
+ * (not including null terminator)
+ */
+static uint64_t min_decs_needed(const uint64_t num);
+
+/**
+ * Doubles the capacity of bi while keeping everything else the same
+ */
+static int double_capacity(struct big_uint* bi);
+
+////////////////////////////////////////////// Main API Methods
 int bi_init(
   struct big_uint* bi, 
   uint64_t start, 
@@ -49,6 +79,9 @@ int bi_init(
   return 0;
 }
 
+/**
+ * A simple test that has expected status and actual status
+ */
 static int test_bi_init_status_code_once(uint64_t start, uint64_t base, int status_exp) {
   struct big_uint bi;
   memset(&bi, 0, sizeof(struct big_uint));
@@ -84,77 +117,116 @@ void bi_free(struct big_uint* bi)
   bi->data = NULL;
 }
 
-void bi_print8(const struct big_uint* bi) {
-  size_t pow = bi->size;
-  for(int i = 0; i < bi->size - 1; ++i){
-    size_t pow = bi->size - i - 1;
-    printf("%dx%" PRIu64 "^(%zu) + ", bi->data[i], bi->base, pow);
+static void bi_print8(const struct big_uint* bi) {
+  uint8_t *data = bi->data;
+  printf("{BI: (size: %zu, capacity: %zu base: %" PRIu64") - ", bi->size, bi->capacity, bi->base);
+  printf("(");
+  for(int i = bi->size - 1; i > 0; --i){
+    printf("%d ", data[i]);
   }
-  printf("%d\n", bi->data[bi->size - 1]);
+  printf("%d)", data[0]);
+  printf("}\n");
 }
+
+static void bi_print16(const struct big_uint* bi) {
+  uint16_t *data = (uint16_t*)bi->data;
+  printf("{BI: (size: %zu, capacity: %zu base: %" PRIu64") - ", bi->size, bi->capacity, bi->base);
+  printf("(");
+  for(int i = bi->size - 1; i > 0; --i){
+    printf("%d ", data[i]);
+  }
+  printf("%d)", data[0]);
+  printf("}\n");
+}
+
+static void bi_print32(const struct big_uint* bi) {
+  uint32_t *data = (uint32_t*)bi->data;
+  printf("{BI: (size: %zu, capacity: %zu base: %" PRIu64") - ", bi->size, bi->capacity, bi->base);
+  printf("(");
+  for(int i = bi->size - 1; i > 0; --i){
+    printf("%d ", data[i]);
+  }
+  printf("%d)", data[0]);
+  printf("}\n");
+}
+
+static void bi_print64(const struct big_uint* bi) {
+
+}
+
+#define BI_PRINT(type, bi) ({ \
+  type *data = (type*)bi->data; \
+  printf("{BI: (size: %zu, capacity: %zu base: %" PRIu64") - ", bi->size, bi->capacity, bi->base); \
+  printf("("); \
+  for(int i = bi->size - 1; i > 0; --i) \
+    printf("%" PRIu64 " ", data[i]); \
+  printf("%" PRIu64 ")", data[0]); \
+  printf("}\n"); \
+})
 
 void bi_print(const struct big_uint* bi) {
   switch(bi->span){
     case UI8:
-      bi_print8(bi);
+      BI_PRINT(uint8_t, bi);
       return;
     case UI16:
-      assert(0);
+      bi_print16(bi);
+      return;
     case UI32:
-      assert(0);
+      bi_print32(bi);
+      return;
     case UI64:
-      assert(0);
+      bi_print64(bi);
+      return;
     default:
       assert(0);
   }
 }
 
-char* bi_power_format(const struct big_uint* bi)
-{
-  size_t len = calc_strlen_bi_power_format(bi);
-  char* ret = malloc(len + 1);
-  ret[len] = '\0';
-  return ret;
-}
-
-ssize_t bi_add_bi_8(
-  uint8_t* dest,
-  size_t dest_size,
-  const uint8_t* right,
-  size_t right_size,
-  uint64_t base
+static void ensure_capacity_big_enough(
+  struct big_uint* bi,
+  size_t size
 ) {
-  // Max size possible for dest - including carry adding one more digit to the left
-  size_t max_size = dest_size > right_size ? dest_size : right_size + 1;
-  int carry = 0;
-
-  // Seems like we're buffer overflowing, but assume capacity is good enough
-  // before entering this function
-  memset(dest + dest_size, 0, max_size - dest_size);
-  for(int i = 0; i < right_size; ++i) {
-    dest[i] += carry + right[i];
-    carry = dest[i] >= base;
-    if(carry)
-      dest[i] -= base;
-  }
-
-  uint8_t bm1 = base - 1;
-  for(int i = 0; i < max_size; ++i) {
-    if(carry && dest[i] == bm1){
-      dest[i] = 0;
-      carry = 1;
-    } else {
-      return i != max_size - 1 ? max_size - 1 : max_size;
-    }
-  }
-
-  assert(0);
+  while(bi->capacity < bi->span * size)
+    double_capacity(bi);
+  assert(bi->capacity >= bi->span * size);
 }
+
+#define BI_ADD_BI(type, dest, right) ({                                       \
+  type* dest_data = (type*)dest->data;                                        \
+  type* right_data = (type*)right->data;                                      \
+                                                                              \
+  /* Size of the maximum number plus one for carry */                         \
+  size_t max_size = dest->size > right->size ? dest->size : right->size + 1;  \
+  ensure_capacity_big_enough(dest, max_size);                                 \
+                                                                              \
+  /* Set the uninitialized space of dest to zero */                           \
+  memset(dest + dest->size, 0, max_size - dest->size);                        \
+  int carry = 0;                                                              \
+  int i = 0;                                                                  \
+                                                                              \
+  /* Add up until right is done (dest is 0 if it's done) */                   \
+  for(; i < right->size; ++i) {                                               \
+    dest_data[i] += carry + right_data[i];                                    \
+    if((carry = dest_data[i] >= dest->base))                                  \
+      dest_data[i] -= dest->base;                                             \
+  }                                                                           \
+                                                                              \
+  /* Continue to add the rest of left */                                      \
+  /* TODO - I think there's an optimization here where you can break early */ \
+  for(; i < max_size; ++i) {                                                  \
+    dest_data[i] += carry;                                                    \
+    if((carry = dest_data[i] >= dest->base))                                  \
+      dest_data[i] -= dest->base;                                             \
+  }                                                                           \
+  dest->size = dest_data[max_size - 1] ? max_size : max_size - 1;             \
+})
 
 int bi_add_bi(
     struct big_uint* dest,
     const struct big_uint* right)
 {
+  // I think you _can_ add different bases, but I'll worry about that later
   if (dest->base != right->base) {
     bi_error("Can only add two big ints if they have the same base\n");
     return -1;
@@ -162,17 +234,21 @@ int bi_add_bi(
 
   switch(dest->span){
     case UI8:
-      dest->size = bi_add_bi_8(dest->data, dest->size, right->data, right->size, dest->base);
-      return 0;
+      BI_ADD_BI(uint8_t, dest, right);
+      break;
     case UI16:
-      assert(0);
+      BI_ADD_BI(uint16_t, dest, right);
+      break;
     case UI32:
-      assert(0);
+      BI_ADD_BI(uint32_t, dest, right);
+      break;
     case UI64:
-      assert(0);
+      BI_ADD_BI(uint64_t, dest, right);
+      break;
     default:
       assert(0);
   }
+  return 0;
 }
 
 int test_bi_add_bi()
@@ -211,10 +287,18 @@ int test_bi_add_bi()
  */
 int bi_add_sc(
     struct big_uint* dest,
-    const uint64_t right)
+    const uint64_t _right)
 {
-  // TODO
-  dest->data[dest->size - 1] += right;
+  uint64_t right = _right;
+  int i = 0;
+  while(right) {
+    if(dest->capacity <= i)
+      double_capacity(dest);
+    dest->data[i] += (right % dest->base);
+    right /= dest->base;
+    i++;
+  }
+  dest->size = i;
   return -1;
 }
 

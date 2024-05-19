@@ -23,7 +23,7 @@ enum span {
 struct big_uint {
   uint8_t* data; 
 
-  size_t size;          // Number of elements (does respect [span])
+  size_t size;          // Number of elements (respects [span])
   size_t capacity;      // Number of bytes in data (doesn't respect [span])
 
   const uint64_t base;  
